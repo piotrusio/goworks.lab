@@ -2,7 +2,10 @@ module github.com/piotrusio/go-mongo
 
 go 1.22.3
 
-require go.mongodb.org/mongo-driver/v2 v2.2.2
+require (
+	github.com/google/uuid v1.6.0
+	go.mongodb.org/mongo-driver/v2 v2.2.2
+)
 
 require (
 	github.com/golang/snappy v1.0.0 // indirect

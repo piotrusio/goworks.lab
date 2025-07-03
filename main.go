@@ -1,149 +1,72 @@
 package main
 
 import (
-	"context"
+	"bytes"
 	"flag"
 	"fmt"
-	"log/slog"
 	"os"
-	"os/signal"
-	"reflect"
-	"syscall"
-	"time"
+	"path/filepath"
 
-	"github.com/google/uuid"
-	"go.mongodb.org/mongo-driver/v2/bson"
-	"go.mongodb.org/mongo-driver/v2/mongo"
-	"go.mongodb.org/mongo-driver/v2/mongo/options"
+    "github.com/microcosm-cc/bluemonday"
+    "github.com/russross/blackfriday/v2"
 )
 
-var (
-	tUUID         = reflect.TypeOf(uuid.UUID{})
-	uuidSubtype   = byte(0x04)
-	mongoRegistry = bson.NewRegistry()
+const (
+    header = `<!DOCTYPE html>
+<html>
+    <head>
+        <meta http-equiv="content-type" content="text\html; charset=utf-8">
+        <title>Markdown Preview Tool</title>
+    </head>
+    <body>
+`
+    footer = `
+</html>
+`
 )
-
-type config struct {
-	port int
-	env  string
-	uri  string
-}
-
-type MongoDB struct {
-	Client *mongo.Client
-}
 
 func main() {
-	var cfg config
+    filename := flag.String("file", "", "Markdown file to preview")
+    flag.Parse()
 
-	flag.IntVar(&cfg.port, "port", 4000, "API server port")
-	flag.StringVar(&cfg.env, "env", "development", "Environment (development|staging|production)")
-	flag.StringVar(&cfg.uri, "db-uri", os.Getenv("MONGODB_URI"), "MongoDB URI")
-	flag.Parse()
+    if *filename == "" {
+        flag.Usage()
+        os.Exit(1)
+    }
 
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-
-	// main application context
-	appCtx, stop := signal.NotifyContext(context.Background(),
-		syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
-	// database startup context
-	startupCtx, startupCancel := context.WithTimeout(appCtx, 30*time.Second)
-	defer startupCancel()
-
-	// TODO: retry
-	mongoDB, err := NewMongoDB(startupCtx, cfg.uri)
-	if err != nil {
-		logger.Error("Failed to connect to MongoDB", "error", err)
-		os.Exit(1)
-	}
-
-	<-appCtx.Done()
-	logger.Info("Shutdown signal received, attempting graceful shutdown.")
-
-	// graceful shutdown context
-	shutdownCtx, shutdownCancel := context.WithTimeout(appCtx, 10*time.Second)
-	defer shutdownCancel()
-
-	shutdownErr := false
-
-	if err := mongoDB.Close(shutdownCtx); err != nil {
-		logger.Error("Error during MongoDB disconnect", "error", err)
-		shutdownErr = true
-	} else {
-		logger.Info("MongoDB gracefully disconnected")
-	}
-
-	logger.Info("Service exiting.")
-	if shutdownErr {
-		os.Exit(1)
-	} else {
-		os.Exit(0)
-	}
+    if err := run(*filename); err != nil {
+        fmt.Fprintln(os.Stderr, err)
+        os.Exit(1)
+    }
 }
 
-func NewMongoDB(ctx context.Context, uri string) (*MongoDB, error) {
-	clientOptions := options.Client().ApplyURI(uri).SetRegistry(mongoRegistry)
-	client, err := mongo.Connect(clientOptions)
-	if err != nil {
-		return nil, err
-	}
+func run(filename string) error {
+    input, err := os.ReadFile(filename)
+    if err != nil {
+        return err
+    }
 
-	if err := client.Ping(ctx, nil); err != nil {
-		_ = client.Disconnect(ctx)
-		return nil, err
-	}
+    htmlData := parseContent(input)
 
-	return &MongoDB{Client: client}, nil
+    outName := fmt.Sprintf("%s.html", filepath.Base(filename))
+    fmt.Println(outName)
+
+    return saveHTML(outName, htmlData)
 }
 
-func (m *MongoDB) Close(ctx context.Context) error {
-	return m.Client.Disconnect(ctx)
+func parseContent(input []byte) []byte {
+
+    output := blackfriday.Run(input)
+    body := bluemonday.UGCPolicy().SanitizeBytes(output)
+
+    var buffer bytes.Buffer
+    buffer.WriteString(header)
+    buffer.Write(body)
+    buffer.WriteString(footer)
+
+    return buffer.Bytes()
 }
 
-func init() {
-	mongoRegistry.RegisterTypeEncoder(tUUID, bson.ValueEncoderFunc(uuidEncodeValue))
-	mongoRegistry.RegisterTypeDecoder(tUUID, bson.ValueDecoderFunc(uuidDecodeValue))
-}
-
-func uuidEncodeValue(ec bson.EncodeContext, vw bson.ValueWriter, val reflect.Value) error {
-	if !val.IsValid() || val.Type() != tUUID {
-		return bson.ValueEncoderError{Name: "uuidEncodeValue", Types: []reflect.Type{tUUID}, Received: val}
-	}
-	b := val.Interface().(uuid.UUID)
-	return vw.WriteBinaryWithSubtype(b[:], uuidSubtype)
-}
-
-func uuidDecodeValue(dc bson.DecodeContext, vr bson.ValueReader, val reflect.Value) error {
-	if !val.CanSet() || val.Type() != tUUID {
-		return bson.ValueDecoderError{Name: "uuidDecodeValue", Types: []reflect.Type{tUUID}, Received: val}
-	}
-
-	var data []byte
-	var subtype byte
-	var err error
-	switch vrType := vr.Type(); vrType {
-	case bson.TypeBinary:
-		data, subtype, err = vr.ReadBinary()
-		if subtype != uuidSubtype {
-			return fmt.Errorf("unsupported binary subtype %v for UUID", subtype)
-		}
-	case bson.TypeNull:
-		err = vr.ReadNull()
-	case bson.TypeUndefined:
-		err = vr.ReadUndefined()
-	default:
-		return fmt.Errorf("cannot decode %v into a UUID", vrType)
-	}
-
-	if err != nil {
-		return err
-	}
-	uuid2, err := uuid.FromBytes(data)
-	if err != nil {
-		return err
-	}
-	val.Set(reflect.ValueOf(uuid2))
-	return nil
+func saveHTML(outFname string, data []byte) error {
+    return os.WriteFile(outFname, data, 0644)
 }

@@ -2,148 +2,152 @@ package main
 
 import (
 	"context"
-	"flag"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
-	"reflect"
+	"strconv"
 	"syscall"
 	"time"
 
-	"github.com/google/uuid"
-	"go.mongodb.org/mongo-driver/v2/bson"
-	"go.mongodb.org/mongo-driver/v2/mongo"
-	"go.mongodb.org/mongo-driver/v2/mongo/options"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 )
 
-var (
-	tUUID         = reflect.TypeOf(uuid.UUID{})
-	uuidSubtype   = byte(0x04)
-	mongoRegistry = bson.NewRegistry()
-)
+const version = "0.0.1"
 
 type config struct {
 	port int
 	env  string
-	uri  string
 }
 
-type MongoDB struct {
-	Client *mongo.Client
+type api struct {
+	config config
+	logger *slog.Logger
 }
 
 func main() {
-	var cfg config
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "startup error: %v\n", err)
+	}
+}
 
-	flag.IntVar(&cfg.port, "port", 4000, "API server port")
-	flag.StringVar(&cfg.env, "env", "development", "Environment (development|staging|production)")
-	flag.StringVar(&cfg.uri, "db-uri", os.Getenv("MONGODB_URI"), "MongoDB URI")
-	flag.Parse()
+func run() error {
+	cfg := loadConfig()
 
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	logger := newLogger(cfg.env)
+	logger = logger.With("env", cfg.env, "component", "api")
 
-	// main application context
-	appCtx, stop := signal.NotifyContext(context.Background(),
-		syscall.SIGINT, syscall.SIGTERM)
+	appCtx, stop := signal.NotifyContext(
+		context.Background(), syscall.SIGINT, syscall.SIGTERM,
+	)
 	defer stop()
 
-	// database startup context
-	startupCtx, startupCancel := context.WithTimeout(appCtx, 30*time.Second)
-	defer startupCancel()
-
-	// TODO: retry
-	mongoDB, err := NewMongoDB(startupCtx, cfg.uri)
-	if err != nil {
-		logger.Error("Failed to connect to MongoDB", "error", err)
-		os.Exit(1)
+	api := &api{
+		config: cfg,
+		logger: logger,
 	}
+
+	srv := &http.Server{
+		Addr:         fmt.Sprintf(":%d", cfg.port),
+		Handler:      api.routes(),
+		IdleTimeout:  time.Minute,
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		ErrorLog:     slog.NewLogLogger(logger.Handler(), slog.LevelError),
+	}
+
+	go func() {
+		logger.Info("starting server", "addr", srv.Addr)
+		if errSrv := srv.ListenAndServe(); errSrv != nil && errSrv != http.ErrServerClosed {
+			logger.Error("HTTP server ListenAndServe error", "error", errSrv)
+			stop()
+		}
+	}()
 
 	<-appCtx.Done()
-	logger.Info("Shutdown signal received, attempting graceful shutdown.")
+	logger.Info("shutdown initiated", "signal", "termination")
 
-	// graceful shutdown context
-	shutdownCtx, shutdownCancel := context.WithTimeout(appCtx, 10*time.Second)
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 
-	shutdownErr := false
+	var shutdownErr error
 
-	if err := mongoDB.Close(shutdownCtx); err != nil {
-		logger.Error("Error during MongoDB disconnect", "error", err)
-		shutdownErr = true
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		logger.Error("HTTP server shutdown error", "error", err)
+		shutdownErr = err
 	} else {
-		logger.Info("MongoDB gracefully disconnected")
+		logger.Info("HTTP server gracefully stopped.")
 	}
+	logger.Info("service exiting.")
+	return shutdownErr
+}
 
-	logger.Info("Service exiting.")
-	if shutdownErr {
-		os.Exit(1)
+func loadConfig() config {
+	var cfg config
+
+	portStr := os.Getenv("PORT")
+	if portStr == "" {
+		portStr = "8080"
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		panic(fmt.Sprintf("invalid PORT env var: %v", err))
+	}
+	cfg.port = port
+
+	env := os.Getenv("ENV")
+	if env == "" {
+		env = "development"
+	}
+	return cfg
+}
+
+func newLogger(env string) *slog.Logger {
+	var handler slog.Handler
+	if env == "development" {
+		handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})
 	} else {
-		os.Exit(0)
+		handler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})
+	}
+	return slog.New(handler)
+}
+
+type ApiStatus struct {
+	Status    string `json:"status"`
+	Timestamp string `json:"timestamp"`
+}
+
+func (a *api) healthzHandler(w http.ResponseWriter, r *http.Request) {
+	status := ApiStatus{
+		Status:    "UP",
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf8")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(status); err != nil {
+		a.logger.Error("could not encode health status to JSON", "error", err)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 	}
 }
 
-func NewMongoDB(ctx context.Context, uri string) (*MongoDB, error) {
-	clientOptions := options.Client().ApplyURI(uri).SetRegistry(mongoRegistry)
-	client, err := mongo.Connect(clientOptions)
-	if err != nil {
-		return nil, err
-	}
+func (a *api) routes() http.Handler {
+	r := chi.NewRouter()
 
-	if err := client.Ping(ctx, nil); err != nil {
-		_ = client.Disconnect(ctx)
-		return nil, err
-	}
+	// --- Middleware ---
+	// Add some standard middleware for good practice.
+	// Logger will log the start and end of each request with useful info.
+	r.Use(middleware.Logger)
+	// Recoverer will absorb panics and print the stack trace.
+	r.Use(middleware.Recoverer)
+	// RequestID sets a unique ID for each request.
+	r.Use(middleware.RequestID)
+	// RealIP gets the true client IP.
+	r.Use(middleware.RealIP)
 
-	return &MongoDB{Client: client}, nil
-}
-
-func (m *MongoDB) Close(ctx context.Context) error {
-	return m.Client.Disconnect(ctx)
-}
-
-func init() {
-	mongoRegistry.RegisterTypeEncoder(tUUID, bson.ValueEncoderFunc(uuidEncodeValue))
-	mongoRegistry.RegisterTypeDecoder(tUUID, bson.ValueDecoderFunc(uuidDecodeValue))
-}
-
-func uuidEncodeValue(ec bson.EncodeContext, vw bson.ValueWriter, val reflect.Value) error {
-	if !val.IsValid() || val.Type() != tUUID {
-		return bson.ValueEncoderError{Name: "uuidEncodeValue", Types: []reflect.Type{tUUID}, Received: val}
-	}
-	b := val.Interface().(uuid.UUID)
-	return vw.WriteBinaryWithSubtype(b[:], uuidSubtype)
-}
-
-func uuidDecodeValue(dc bson.DecodeContext, vr bson.ValueReader, val reflect.Value) error {
-	if !val.CanSet() || val.Type() != tUUID {
-		return bson.ValueDecoderError{Name: "uuidDecodeValue", Types: []reflect.Type{tUUID}, Received: val}
-	}
-
-	var data []byte
-	var subtype byte
-	var err error
-	switch vrType := vr.Type(); vrType {
-	case bson.TypeBinary:
-		data, subtype, err = vr.ReadBinary()
-		if subtype != uuidSubtype {
-			return fmt.Errorf("unsupported binary subtype %v for UUID", subtype)
-		}
-	case bson.TypeNull:
-		err = vr.ReadNull()
-	case bson.TypeUndefined:
-		err = vr.ReadUndefined()
-	default:
-		return fmt.Errorf("cannot decode %v into a UUID", vrType)
-	}
-
-	if err != nil {
-		return err
-	}
-	uuid2, err := uuid.FromBytes(data)
-	if err != nil {
-		return err
-	}
-	val.Set(reflect.ValueOf(uuid2))
-	return nil
+	r.Get("/healthz", a.healthzHandler)
+	return r
 }

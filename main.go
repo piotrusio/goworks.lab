@@ -1,143 +1,90 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
+
+// New DynamicArray
+// Get by index return element, error
+// Set value on index return error
+// Append new element with resize
+// Insert element on index
+// Delete by index
+// Size(), IsEmpty, String
 
 func main() {
-	arr1 := [6]int{10,20,30,40}
-	arr2 := [...]int{10,20,30,40,50}
-	for i, v := range arr1[2:4] {
-		fmt.Printf("Index: %d value %d\n", i, v)
+	fmt.Println("Hello world")
+
+	var arr0 [3]int
+	arr1 := [...]int{1,2,3}
+	arr2 := [3]int{1,2,3}
+	arr3 := [5]int{1,2}
+
+	fmt.Println("Len of arr0: ",len(arr0))
+	fmt.Println("Len of arr1: ",len(arr1))
+	fmt.Println("Len of arr2: ",len(arr2))
+	fmt.Println("Len of arr3: ",len(arr3))
+
+	// basic if
+	if arr1 == arr2 {
+		fmt.Println("Equal")
 	}
 
-	fmt.Printf("The arr1 length %d\n", len(arr1))
-	fmt.Printf("The arr1 capacity %d\n", cap(arr1))
-	fmt.Printf("The arr2 length %d\n", len(arr2))
-	fmt.Printf("The arr2 capacity %d\n", cap(arr2))
-}
-
-type DynamicArray struct {
-	data []int
-	size int
-	capacity int
-}
-
-func NewDynamicArray(initialCapacity int) *DynamicArray {
-	return &DynamicArray{
-		data: make([]int, 0, initialCapacity),
-		size: 0,
-		capacity: initialCapacity,
-	}
-}
-
-func (d *DynamicArray) Get(index int) (int, error) {
-	if index < 0 {
-		return 0, fmt.Errorf("index cannot be negativa: %d", index)
-	}
-
-	if index >= d.size {
-		return 0, fmt.Errorf("index %d out of bounds, size is %d", index, d.size)
-	}
-
-	return d.data[index], nil
-}
-
-func (d *DynamicArray) Set(index int, value int) error {
-	if index < 0 {
-		return fmt.Errorf("index cannot be negative %d", index)
-	}
-	if index >= d.size {
-		return fmt.Errorf("index %d out of bounds, size is %d", index, d.size)
-	}
-
-	d.data[index] = value
-	return nil
-}
-
-func (d *DynamicArray) Append(value int) {
-	if d.size < d.capacity {
-		d.data[d.size] = value
-		d.size++
+	// basic if-else
+	if arr0 == arr1 {
+		fmt.Println("Equal")
 	} else {
-		d.resize(2 * d.capacity)
-		d.data[d.size] = value
-		d.size++
-	}
-}
-
-func (d *DynamicArray) resize(newCapacity int) {
-	newData := make([]int, d.size, newCapacity)
-	copy(newData, d.data)
-	d.data = newData
-	d.capacity = newCapacity
-}
-
-func (d *DynamicArray) Insert(index int, value int) error {
-	if index < 0 {
-		return fmt.Errorf("index cannot be negative %d", index)
+		fmt.Println("Not Equal")
 	}
 	
-	if index > d.size {
-		return fmt.Errorf("index %d out of bounds, size is %d", index, d.size)
+	// if-else-if
+	if arr1[0] == 3 {
+		fmt.Println("Yes print from 1 ", arr1[0])
+	} else if arr0[1] == 3 {
+		fmt.Println("Yes print from 2 ", arr1[0])
+	} else if arr0[2] == 3 {
+		fmt.Println("Yes print from 3 ", arr1[0])
+	} else {
+		fmt.Println("No print failed")
 	}
 
-	if d.size >= d.capacity {
-		d.resize(2 * d.capacity)
+	// if with initialization
+	if arr4 := [...]int{1,2,3,4}; len(arr4) == 4 {
+		fmt.Println("Array element: ", arr4[3])
 	}
 
-	// shift elements right
-	// Before: [10, 20, 30], size=3, insert 99 at index 1
-	// d.data[index:d.size] = d.data[1:3] = [20, 30] (source)
-	// d.data[index+1:]     = d.data[2:]   = positions 2,3... (destination)
-	// copy(d.data[2:], [20, 30])
-	// After copy: [10, _, 20, 30] (position 1 is now free)
-	copy(d.data[index+1:], d.data[index:d.size])
-
-	// insert
-	d.data[index] = value
-	d.size++
-
-	return nil
-}
-
-func (d *DynamicArray) Delete(index int) error {
-	if index < 0 {
-		return fmt.Errorf("index cannot be negative %d", index)
+	// classic for loop
+	for i := 0; i < len(arr3); i++ {
+		fmt.Printf("The value of index %d is %d\n", i, arr3[i])
 	}
 
-	if index >= d.size {
-		return fmt.Errorf("index %d out of bounds, size is %d", index, d.size)
+	// while style loop
+	var i int
+	for i < 10 {
+		fmt.Println("While loop i:", i)
+		i++
 	}
 
-	// Before: [10, 20, 30, 40, 0, 0, 0], size=4, delete at index 1 -> 20
-	// d.data[index+1:d.size] = d.data[2:4] -> [30, 40] //
-	// d.data[index:] -> d.data[1:]
-	copy(d.data[index:], d.data[index+1:d.size])
-	d.size--
+	// loop through collection
+	for i, v := range arr2 {
+		fmt.Printf("The value of index %d is %d\n", i, v)
+	}
 
-	return nil
-}
+	// range only with intex
+	for i := range arr3 {
+		fmt.Printf("The index is %d\n", i)
 
-func (d *DynamicArray) Size() int {
-	return d.size
-}
+	}
+	
+	// range only with value
+	for _, v := range arr3 {
+		fmt.Printf("The value is %d\n", v)
+	}
 
-func (d *DynamicArray) IsEmpty() bool {
-	return d.size == 0
-}
-
-func (d *DynamicArray) String() string {
-    if d.size == 0 {
-        return "[]"
-    }
-    
-    // Build string like "[10, 20, 30]"
-    result := "["
-    for i := 0; i < d.size; i++ {
-        if i > 0 {
-            result += ", "
-        }
-        result += fmt.Sprintf("%d", d.data[i])
-    }
-    result += "]"
-    return result
+	// infinite loop
+	for {
+		time.Sleep(2 * time.Second)
+		fmt.Println("I am in the infinite loop")
+	}
 }

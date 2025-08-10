@@ -1,0 +1,60 @@
+name: goworks
+
+services:
+  nats:
+    image: nats:latest
+    container_name: nats
+    restart: unless-stopped
+    ports:
+      - "4222:4222" # Client port
+      - "8222:8222" # Monitoring port
+    networks:
+      - goworks-net
+
+  postgres:
+    image: postgres:latest
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - ${HOME}/Postgres/goworks:/var/lib/postgresql/data
+      # - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin_user -d pt_aur_rmrepo_dev_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - goworks-net
+
+  valkey:
+    image: valkey/valkey:7.2
+    container_name: valkey
+    ports:
+      - "6379:6379"
+    volumes:
+      - ${HOME}/Valkey/roche:/data
+    environment:
+      - VALKEY_PASSWORD=pa55word
+    command: >
+      valkey-server
+      --requirepass pa55word
+      --appendonly yes
+      --appendfsync everysec
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "valkey-cli", "--raw", "incr", "ping"]
+      interval: 30s
+      timeout: 3s
+      retries: 5
+    networks:
+      - goworks-net
+
+networks:
+  goworks-net:
+    name: goworks-net

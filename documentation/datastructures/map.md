@@ -104,3 +104,51 @@ if uniqueItems["item1"] {                       // Check membership
     fmt.Println("item1 exists in set")
 }
 ```
+
+## Map Internals and Performance
+
+```go
+// Hash table fundamentals - Go maps use buckets with overflow chaining
+// Each bucket holds ~8 key-value pairs, with overflow buckets when full
+
+// Load factor monitoring - Go targets load factor ~6.5
+m := make(map[string]int)
+for i := 0; i < 1000; i++ {
+    m[fmt.Sprintf("key%d", i)] = i    // Triggers growth at certain thresholds
+}
+// Bucket count grows: 8 → 16 → 32 → 64 → 128...
+
+// Performance characteristics
+// Average case: O(1) insert, lookup, delete
+// Worst case: O(n) if all keys hash to same bucket (rare with Go's hash functions)
+
+// Map growth triggers rehashing - ALL elements moved to new bucket layout
+// Pre-allocation reduces rehashing overhead
+slowMap := make(map[string]int)           // Multiple rehashing events
+fastMap := make(map[string]int, 10000)    // Pre-allocated, fewer rehashing events
+
+// Memory considerations - maps don't auto-shrink
+bigMap := make(map[string]int)
+for i := 0; i < 100000; i++ {
+    bigMap[fmt.Sprintf("key%d", i)] = i   // Memory allocated for 100K elements
+}
+
+// Delete most elements - memory still allocated!
+for i := 0; i < 95000; i++ {
+    delete(bigMap, fmt.Sprintf("key%d", i))
+}
+// len(bigMap) = 5000, but memory for 100K still used
+
+// Reclaim memory by creating new map
+compactMap := make(map[string]int, len(bigMap))
+for k, v := range bigMap {
+    compactMap[k] = v                     // Copy to right-sized map
+}
+bigMap = compactMap                       // Old map eligible for GC
+
+// Key type performance - comparable types only
+intKeys := make(map[int]string)           // Fast: simple hash
+stringKeys := make(map[string]int)        // Good: optimized string hashing
+structKeys := make(map[struct{x,y int}]string) // Slower: composite hashing
+// sliceKeys := make(map[[]int]string)    // Invalid: slices not comparable
+```

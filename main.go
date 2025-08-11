@@ -1,31 +1,18 @@
 package main
 
-import "fmt"
+import (
+    "net/http"
 
-type Person struct {
-    Name string
-    Age  int
-}
-
-type Employee struct {
-	Person
-	ID int
-}
-
-func (p Person) Greet() {
-    fmt.Println("Hello, I'm " + p.Name)
-}
-
-func (e Employee) Greet() {
-    fmt.Println("Hello, I'm Employee " + e.Person.Name)
-}
-
+    "github.com/go-chi/chi/v5"
+    "github.com/go-chi/chi/v5/middleware"
+)
 
 
 func main() {
-	emp := Employee{
-		Person: Person{Name: "Piotr", Age: 41},
-		ID: 84092708592,
-	}
-	emp.Person.Greet()
+	r := chi.NewRouter()
+	r.Use(middleware.Logger)
+	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Hello Go"))
+	})
+	http.ListenAndServe(":4000", r)
 }

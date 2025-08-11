@@ -25,7 +25,7 @@
 |--------|-------|-------------|---------|
 | 8 | Map Fundamentals | make(map[K]V), map literals, key types, nil maps | ✅ Complete |
 | 9 | Map Operations | Insert/lookup/delete, comma ok idiom, range iteration | ✅ Complete |
-| 10 | Map Internals and Performance | Hash table concepts, load factor, collision handling | ⏳ Pending |
+| 10 | Map Internals and Performance | Hash table concepts, load factor, collision handling | ✅ Complete |
 | 11 | Map Patterns and Use Cases | Maps as sets, frequency counting, nested maps | ⏳ Pending |
 | 12 | Struct Fundamentals | Struct declaration, field access, embedding, methods | ✅ Complete |
 | 13 | Struct Patterns | Advanced struct techniques, memory layout, alignment | ⏳ Pending |

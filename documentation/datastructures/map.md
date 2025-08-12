@@ -152,3 +152,63 @@ stringKeys := make(map[string]int)        // Good: optimized string hashing
 structKeys := make(map[struct{x,y int}]string) // Slower: composite hashing
 // sliceKeys := make(map[[]int]string)    // Invalid: slices not comparable
 ```
+
+## Map Patterns and Use Cases
+
+```go
+// Maps as sets - two approaches
+// Approach 1: map[T]bool (1 byte per value)
+fruitsSet := make(map[string]bool)
+fruitsSet["apple"] = true
+if fruitsSet["apple"] { fmt.Println("Found apple") }
+
+// Approach 2: map[T]struct{} (0 bytes per value - more efficient)
+type StringSet map[string]struct{}
+users := make(StringSet)
+users["user123"] = struct{}{}               // struct{}{} = zero-byte value
+if _, exists := users["user123"]; exists { fmt.Println("User exists") }
+
+// Frequency counting pattern
+func charFrequency(text string) map[rune]int {
+    freq := make(map[rune]int)
+    for _, char := range text {
+        freq[char]++                        // Auto-initializes to 0, then increments
+    }
+    return freq
+}
+
+// Grouping data pattern
+type Student struct { Name, Grade string; Score int }
+func groupByGrade(students []Student) map[string][]Student {
+    groups := make(map[string][]Student)
+    for _, student := range students {
+        groups[student.Grade] = append(groups[student.Grade], student)
+    }
+    return groups
+}
+
+// Nested maps for multi-level indexing
+type Cache map[string]map[string]interface{}
+cache := make(Cache)
+if cache["user"] == nil {
+    cache["user"] = make(map[string]interface{})
+}
+cache["user"]["resource"] = "cached_data"
+
+// Complex key types - structs as keys (must be comparable)
+type Point struct { X, Y int }
+distances := map[Point]float64{
+    {0, 0}: 0.0,
+    {1, 1}: 1.414,
+    {2, 3}: 3.606,
+}
+fmt.Println(distances[Point{1, 1}])         // 1.414
+
+// Convert slice to set for O(1) lookups instead of O(n)
+items := []string{"apple", "banana", "apple", "cherry"}
+uniqueSet := make(map[string]struct{})
+for _, item := range items {
+    uniqueSet[item] = struct{}{}
+}
+fmt.Println("Unique count:", len(uniqueSet)) // 3
+```

@@ -64,3 +64,13 @@ This README outlines advanced topics and learning paths for Go developers lookin
 
 ### Benchmarking
 - Advanced benchmarking
+
+### Graph Algorithms and Data Structures
+- BFS – Queue, Adjacency List, Adjacency Matrix (for dense graphs)
+- DFS – Stack, Adjacency List, Adjacency Matrix (for dense graphs)
+- Dijkstra – Priority Queue (Heap), Adjacency List, CSR (for large sparse graphs), Adjacency Matrix (optional)
+- Prim – Priority Queue (Heap), Adjacency List, CSR, Adjacency Matrix
+- Kruskal – Disjoint Set (Union-Find), Edge List, CSR (if working with large sparse graphs)
+- Topological Sort – Stack, Adjacency List
+- Ford-Fulkerson – Adjacency List, Adjacency Matrix (alternative), CSR (for performance)
+- A* – Priority Queue (Heap), Adjacency List, CSR, Adjacency Matrix (for grid-like graphs)
